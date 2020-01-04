@@ -82,12 +82,12 @@ namespace LCH
 
                     foreach (GameObject rootGameObject in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
                     {
-                        foreach (Text text in rootGameObject.GetComponentsInChildren<Text>())
+                        foreach (Text text in rootGameObject.GetComponentsInChildren<Text>(true))
                         {
                             collectedText += text.text + " ";
                         }
 
-                        foreach (TMP_Text tmp_text in rootGameObject.GetComponentsInChildren<TMP_Text>())
+                        foreach (TMP_Text tmp_text in rootGameObject.GetComponentsInChildren<TMP_Text>(true))
                         {
                             collectedText += tmp_text.text + " ";
                         }
