@@ -1,41 +1,36 @@
-// Copyright 2019. LCH. All rights reserved.
+﻿// Copyright 2019. LCH. All rights reserved.
 
-using TMPro;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using TMPro;
 using UnityEditor;
-using UnityEngine;
 using UnityEditor.SceneManagement;
+using UnityEngine;
 using UnityEngine.UI;
 
 namespace LCH
 {
-#if UNITY_EDITOR
-    public class FontsubsetMaker : LCHMonoBehaviour
+    public class FontsubsetMaker : MonoBehaviour
     {
         private const string TAG = nameof(FontsubsetMaker);
 
 
 
-        private static string pyftsubsetPath = Path.Combine("C:\\", "Users", "LCH", "AppData", "Local", "Programs", "Python", "Python38-32", "Scripts", "pyftsubset.exe");
+        public static string pyftsubsetFilePath;
+        public static string glyphsTxtFilePath;
+        public static List<string> scenePathsIncludedText = new List<string>();
+
+
         private static string collectedText;
-        private static bool isCollected;
+
 
         // Not subset font paths, Save fontsubset path.
         private static FontsubsetPath[] fontsubsetPaths = {
-            new FontsubsetPath(Path.Combine(Application.dataPath, "LCHFramework", "Fonts", "NotoSans", "Original"), Path.Combine(Application.dataPath, "LCHFramework", "Fonts", "NotoSans", "Subset")),
-            new FontsubsetPath(Path.Combine(Application.dataPath, "LCHFramework", "Fonts", "NotoSansMono", "Original"), Path.Combine(Application.dataPath, "LCHFramework", "Fonts", "NotoSansMono", "Subset")),
+            new FontsubsetPath(Application.dataPath + "/LCHFramework/Fonts/NotoSans/Original", Application.dataPath + "/LCHFramework/Fonts/NotoSans/Subset"),
+            new FontsubsetPath(Application.dataPath + "/LCHFramework/Fonts/NotoSansMono/Original", Application.dataPath +"/LCHFramework/Fonts/NotoSansMono/Subset")
         };
-
-
-        private static string SubsetTxtPath
-        {
-            get
-            {
-                return Path.Combine(fontsubsetPaths[0].outputPath, "subset.txt");
-            }
-        }
 
 
 
@@ -55,73 +50,42 @@ namespace LCH
 
         private static void CollectTexts()
         {
-            ConsoleWindow.Clear();
+            string beginScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path;
+            collectedText = null;
 
-            Debug.Log($"{TAG}, CollectTexts(): Begin.");
-
-            if (!EditorApplication.isPlaying)
+            foreach (string scene in scenePathsIncludedText)
             {
-                string beginScenePath = null;
-                string[] activeScenePaths = EditorBuildSettingsScene.GetActiveSceneList(EditorBuildSettings.scenes);
+                EditorSceneManager.OpenScene(scene);
 
-                collectedText = null;
-
-                foreach(string activeScenePath in activeScenePaths)
+                foreach (GameObject rootGameObject in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
                 {
-                    if (activeScenePath == UnityEngine.SceneManagement.SceneManager.GetActiveScene().path)
-                    {
-                        beginScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path;
-
-                        break;
-                    }
+                    foreach (Text text in rootGameObject.GetComponentsInChildren<Text>(true)) if (!collectedText.Contains(text.text)) collectedText += text.text + " ";
+                    foreach (TMP_Text tmp_text in rootGameObject.GetComponentsInChildren<TMP_Text>(true)) if (!collectedText.Contains(tmp_text.text)) collectedText += tmp_text.text + " ";
                 }
-
-                foreach(string activeScenePath in activeScenePaths)
-                {
-                    EditorSceneManager.OpenScene(activeScenePath);
-
-                    foreach (GameObject rootGameObject in UnityEngine.SceneManagement.SceneManager.GetActiveScene().GetRootGameObjects())
-                    {
-                        foreach (Text text in rootGameObject.GetComponentsInChildren<Text>(true))
-                        {
-                            collectedText += text.text + " ";
-                        }
-
-                        foreach (TMP_Text tmp_text in rootGameObject.GetComponentsInChildren<TMP_Text>(true))
-                        {
-                            collectedText += tmp_text.text + " ";
-                        }
-                    }
-                }
-
-                EditorSceneManager.OpenScene(beginScenePath);
-                isCollected = true;
             }
-            else
-            {
-                Debug.Log($"{TAG}, 플레이 모드에서는 사용할 수 없습니다.");
-            }
+
+            EditorSceneManager.OpenScene(beginScenePath);
         }
 
         private static void ExportSubsetTxt()
         {
-            File.WriteAllText(SubsetTxtPath, collectedText);
+            File.WriteAllText(glyphsTxtFilePath, collectedText);
 
-            Debug.Log($"{TAG}, {SubsetTxtPath} 을(를) 생성했습니다.");
+            Debug.Log($"{TAG}, {glyphsTxtFilePath} 을(를) 생성했습니다.");
         }
 
         [MenuItem("Tools/Fontsubset Maker/Make Fontsubset", false, 20)]
         private static void MakeFontsubset()
         {
-            if (File.Exists(pyftsubsetPath))
+            if (File.Exists(pyftsubsetFilePath))
             {
-                if (File.Exists(SubsetTxtPath))
+                if (File.Exists(glyphsTxtFilePath))
                 {
                     foreach (FontsubsetPath fontsubsetPath in fontsubsetPaths)
                     {
                         if (Directory.Exists(fontsubsetPath.originalPath))
                         {
-                            string[] originalFontPaths = (new string[] { "*.ttf", "*.otf" }).SelectMany(searchPattern => Directory.GetFiles(fontsubsetPath.originalPath, searchPattern)).ToArray();
+                            string[] originalFontPaths = (new string[] { "*.ttf", "*.otf", "*.ttc" }).SelectMany(searchPattern => Directory.GetFiles(fontsubsetPath.originalPath, searchPattern)).ToArray();
 
                             if (originalFontPaths == null || originalFontPaths.Length == 0)
                             {
@@ -131,8 +95,40 @@ namespace LCH
                             {
                                 foreach (string originalFontPath in originalFontPaths)
                                 {
-                                    string arguments = $"{originalFontPath} --output-file={fontsubsetPath.outputPath + originalFontPath.Replace(fontsubsetPath.originalPath, "")} --text-file={SubsetTxtPath}";
-                                    System.Diagnostics.Process.Start(pyftsubsetPath, arguments);
+
+                                    string arguments =
+#if UNITY_EDITOR_WIN
+                                        $"{originalFontPath}" +
+                                        $" --text-file={glyphsTxtFilePath}" +
+                                        $" --output-file={fontsubsetPath.outputPath + originalFontPath.Replace(fontsubsetPath.originalPath, "")}" +
+#elif UNITY_EDITOR_OSX
+                                        $"\"{originalFontPath}\"" +
+                                        $" --text-file=\"{glyphsTxtFilePath}\"" +
+                                        $" --output-file=\"{fontsubsetPath.outputPath + originalFontPath.Replace(fontsubsetPath.originalPath, "")}\"" +
+#endif
+                                        $" --layout-features='*'" +
+                                        $" --glyph-names" +
+                                        $" --symbol-cmap" +
+                                        $" --legacy-cmap" +
+                                        $" --notdef-glyph" +
+                                        $" --notdef-outline" +
+                                        $" --recommended-glyphs" +
+                                        $" --name-legacy" +
+                                        $" --drop-tables=" +
+                                        $" --name-IDs='*'" +
+                                        $" --name-languages='*'";
+
+                                    try
+                                    {
+                                        System.Diagnostics.Process.Start(pyftsubsetFilePath, arguments);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Debug.LogError(e);
+#if UNITY_EDITOR_OSX
+                                        Debug.Log(TAG + ", please execute in terminal \"chmod -R 777 {Target folder}\"");
+#endif
+                                    }
                                 }
                             }
                         }
@@ -144,12 +140,12 @@ namespace LCH
                 }
                 else
                 {
-                    Debug.LogError($"{TAG}, {SubsetTxtPath} 이 없습니다.");
+                    Debug.LogError($"{TAG}, {glyphsTxtFilePath} 이 없습니다.");
                 }
             }
             else
             {
-                Debug.LogError($"{TAG}, {pyftsubsetPath} 을(를) 찾을 수 없습니다. 파이썬은 설치하셨나요?");
+                Debug.LogError($"{TAG}, {pyftsubsetFilePath} 을(를) 찾을 수 없습니다. 파이썬은 설치하셨나요?");
             }
         }
 
@@ -160,6 +156,8 @@ namespace LCH
             public string originalPath;
             public string outputPath;
 
+
+
             public FontsubsetPath(string originalPath, string outputPath)
             {
                 this.originalPath = originalPath;
@@ -167,5 +165,4 @@ namespace LCH
             }
         }
     }
-#endif
 }
